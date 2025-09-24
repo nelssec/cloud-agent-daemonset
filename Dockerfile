@@ -8,7 +8,7 @@ FROM ${BASE_IMAGE}
 
 ARG VERSION
 
-LABEL maintainer="qualys-engineering@qualys.com" \
+LABEL maintainer="anelson@qualys.com" \
       description="Qualys Cloud Agent for Kubernetes - Universal Image" \
       version="${VERSION}" \
       vendor="Qualys Inc."

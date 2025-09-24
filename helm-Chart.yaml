@@ -14,10 +14,10 @@ keywords:
   - cloud-agent
 home: https://www.qualys.com/
 sources:
-  - https://github.com/your-org/qualys-cloud-agent-helm
+  - https://github.com/nelssec/qualys-cloud-daemonset
 maintainers:
-  - name: Qualys Engineering
-    email: qualys-engineering@qualys.com
+  - name: Andrew Nelson
+    email: anelsong@qualys.com
 icon: https://www.qualys.com/favicon.ico
 annotations:
   # Artifact Hub annotations

@@ -22,7 +22,7 @@ helm install qualys-agent qualys-cloud-agent/ \
   --set image.tag="1.0.0"
 ```
 
-That's it! The chart will:
+The chart will:
 - Create the namespace
 - Create a Kubernetes Secret with your credentials
 - Deploy the DaemonSet on all nodes

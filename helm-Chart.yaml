@@ -1,0 +1,37 @@
+apiVersion: v2
+name: qualys-cloud-agent
+description: Qualys Cloud Agent for Kubernetes - Enterprise Security Scanner
+type: application
+version: 1.0.0
+appVersion: "6.1.0-25"
+keywords:
+  - qualys
+  - security
+  - vulnerability
+  - scanning
+  - compliance
+  - vmdr
+  - cloud-agent
+home: https://www.qualys.com/
+sources:
+  - https://github.com/your-org/qualys-cloud-agent-helm
+maintainers:
+  - name: Qualys Engineering
+    email: qualys-engineering@qualys.com
+icon: https://www.qualys.com/favicon.ico
+annotations:
+  # Artifact Hub annotations
+  artifacthub.io/category: security
+  artifacthub.io/license: Proprietary
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/operator: "false"
+  
+  # Installation examples
+  artifacthub.io/install: |
+    helm install qualys-agent qualys/qualys-cloud-agent \
+      --create-namespace \
+      --namespace qualys-agent \
+      --set qualys.activationId="YOUR_ACTIVATION_ID" \
+      --set qualys.customerId="YOUR_CUSTOMER_ID" \
+      --set qualys.serverUri="https://your.qualys.server/CloudAgent/" \
+      --set image.repository="your-registry.com/qualys-cloud-agent"

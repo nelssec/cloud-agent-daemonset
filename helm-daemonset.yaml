@@ -1,0 +1,112 @@
+{{- include "qualys-cloud-agent.validateConfig" . -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "qualys-cloud-agent.fullname" . }}
+  namespace: {{ include "qualys-cloud-agent.namespace" . }}
+  labels:
+    {{- include "qualys-cloud-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "qualys-cloud-agent.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.daemonset.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "qualys-cloud-agent.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "qualys-cloud-agent.serviceAccountName" . }}
+      hostNetwork: {{ .Values.daemonset.hostNetwork }}
+      hostPID: {{ .Values.daemonset.hostPID }}
+      hostIPC: {{ .Values.daemonset.hostIPC }}
+      dnsPolicy: {{ .Values.daemonset.dnsPolicy }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      containers:
+      - name: qualys-agent
+        image: "{{ required "image.repository is required" .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/bin/bash", "/opt/qualys/install.sh"]
+        
+        env:
+        {{- include "qualys-cloud-agent.env" . | nindent 8 }}
+        
+        securityContext:
+          {{- toYaml .Values.daemonset.securityContext | nindent 10 }}
+        
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        
+        volumeMounts:
+        - name: host-tmp
+          mountPath: /host-tmp
+        - name: qualys-install-script
+          mountPath: /opt/qualys/install.sh
+          subPath: install.sh
+        
+        {{- if .Values.healthChecks.liveness.enabled }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - nsenter --target 1 --mount --uts --ipc --net --pid systemctl is-active qualys-cloud-agent || exit 1
+          initialDelaySeconds: {{ .Values.healthChecks.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthChecks.liveness.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.liveness.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.liveness.failureThreshold }}
+        {{- end }}
+        
+        {{- if .Values.healthChecks.readiness.enabled }}
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - test -f /opt/qualys/install.sh
+          initialDelaySeconds: {{ .Values.healthChecks.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthChecks.readiness.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.readiness.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.readiness.failureThreshold }}
+        {{- end }}
+      
+      terminationGracePeriodSeconds: 30
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      volumes:
+      - name: host-tmp
+        hostPath:
+          path: /tmp
+          type: Directory
+      - name: qualys-install-script
+        configMap:
+          name: {{ include "qualys-cloud-agent.fullname" . }}-install-script
+          defaultMode: 0755

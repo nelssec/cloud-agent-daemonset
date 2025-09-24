@@ -1,0 +1,119 @@
+# Qualys Cloud Agent Helm Chart Values
+# 
+# Install with:
+#   helm install qualys-agent . \
+#     --set qualys.activationId=YOUR_ID \
+#     --set qualys.customerId=YOUR_CUSTOMER \
+#     --set qualys.serverUri=YOUR_URI \
+#     --set image.repository=your-registry.com/qualys-cloud-agent
+
+# Qualys Configuration
+qualys:
+  # Required: Set via --set flags for security (never hardcode here)
+  activationId: ""
+  customerId: ""
+  serverUri: "https://qagpublic.qg2.apps.qualys.com/CloudAgent/"
+  logLevel: 3
+  
+  # Optional: Use existing secret instead of creating one
+  existingSecret:
+    enabled: false
+    name: "qualys-credentials"
+    keys:
+      activationId: "activation-id"
+      customerId: "customer-id"
+      serverUri: "server-uri"
+
+# Container Image
+image:
+  repository: ""  # Required: Set your registry
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# DaemonSet Configuration
+daemonset:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  
+  # Security Context
+  securityContext:
+    privileged: true
+    capabilities:
+      add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+      - SYS_CHROOT
+    runAsUser: 0
+    runAsNonRoot: false
+  
+  # Host Configuration
+  hostNetwork: true
+  hostPID: true
+  hostIPC: false
+  dnsPolicy: ClusterFirstWithHostNet
+
+# Resource Limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Pod Configuration
+podAnnotations: {}
+podLabels: {}
+
+# Node Selection
+nodeSelector: {}
+
+# Tolerations
+tolerations:
+  - operator: Exists
+
+# Affinity Rules
+affinity: {}
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# RBAC
+rbac:
+  create: true
+
+# Monitoring
+monitoring:
+  enabled: true
+  interval: 60
+  timeout: 10
+
+# Namespace (will be created if doesn't exist)
+namespace: qualys-agent
+createNamespace: true
+
+# Health Checks
+healthChecks:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 120
+    periodSeconds: 60
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# Validation
+validation:
+  required: true  # Fail if credentials not provided
+  checkSecret: true  # Verify secret exists before deployment

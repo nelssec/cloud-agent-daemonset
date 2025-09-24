@@ -1,0 +1,44 @@
+{{- $namespace := include "qualys-cloud-agent.namespace" . -}}
+QUALYS CLOUD AGENT DEPLOYED SUCCESSFULLY
+========================================
+
+1. Check DaemonSet Status:
+   kubectl get daemonset -n {{ $namespace }}
+
+2. View Agent Pods:
+   kubectl get pods -n {{ $namespace }} -l app.kubernetes.io/name={{ include "qualys-cloud-agent.name" . }}
+
+3. Check Agent Logs:
+   kubectl logs -n {{ $namespace }} -l app.kubernetes.io/name={{ include "qualys-cloud-agent.name" . }} --tail=50
+
+4. Verify Agent on Host:
+   POD=$(kubectl get pods -n {{ $namespace }} -l app.kubernetes.io/name={{ include "qualys-cloud-agent.name" . }} -o jsonpath='{.items[0].metadata.name}')
+   kubectl exec -n {{ $namespace }} $POD -- nsenter --target 1 --mount --uts --ipc --net --pid systemctl status qualys-cloud-agent
+
+5. Security Verification:
+   {{- if not .Values.qualys.existingSecret.enabled }}
+   - Credentials stored in Secret: {{ include "qualys-cloud-agent.fullname" . }}-secret
+   {{- else }}
+   - Using existing Secret: {{ .Values.qualys.existingSecret.name }}
+   {{- end }}
+   - Verify: kubectl get secret -n {{ $namespace }}
+
+Expected Results:
+- One pod per node running the agent
+- Three processes: qualys-cloud-agent, qualys-cep, agentid-service
+- Agents appear in Qualys console within 5-10 minutes
+
+{{- if and (not .Values.qualys.existingSecret.enabled) (not .Values.qualys.activationId) }}
+
+WARNING: Installation may have failed due to missing credentials!
+Please reinstall with:
+  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} \
+    --set qualys.activationId=YOUR_ID \
+    --set qualys.customerId=YOUR_CUSTOMER \
+    --set qualys.serverUri=YOUR_URI \
+    --set image.repository=YOUR_REGISTRY
+{{- end }}
+
+For support, check:
+- Agent logs: kubectl logs -n {{ $namespace }} <pod-name>
+- Host logs: kubectl exec -n {{ $namespace }} <pod-name> -- nsenter --target 1 --mount --uts --ipc --net --pid journalctl -u qualys-cloud-agent

@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "qualys-cloud-agent.fullname" . }}-install-script
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "qualys-cloud-agent.labels" . | nindent 4 }}
+data:
+  # This script contains NO credentials - they are injected via environment variables from Secrets
+  install.sh: |
+    #!/bin/bash
+    set -e
+
+    # Credentials come from Kubernetes Secrets via environment variables
+    # They are NEVER hardcoded in this ConfigMap
+    ACTIVATION_ID="${ACTIVATION_ID:-}"
+    CUSTOMER_ID="${CUSTOMER_ID:-}"
+    SERVER_URI="${SERVER_URI:-}"
+    LOG_LEVEL="${LOG_LEVEL:-3}"
+
+    # Use mounted /tmp only for security
+    HOST_TMP="/host-tmp"
+    
+    echo "Qualys Cloud Agent Universal Installer"
+    echo "Activation ID: ${ACTIVATION_ID:0:8}..."  # Only show first 8 chars for security
+    echo "Customer ID: ${CUSTOMER_ID:0:8}..."      # Only show first 8 chars for security
+    echo "Server URI: ${SERVER_URI}"
+
+    if [[ -z "$ACTIVATION_ID" || -z "$CUSTOMER_ID" || -z "$SERVER_URI" ]]; then
+        echo "ERROR: Missing required credentials from Kubernetes Secret"
+        exit 1
+    fi
+
+    # Detect host architecture
+    HOST_ARCH=$(nsenter --target 1 --mount --uts --ipc --net --pid uname -m)
+    echo "Host architecture: $HOST_ARCH"
+
+    case "$HOST_ARCH" in
+        x86_64|amd64) ARCH="x64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        *) 
+            echo "WARNING: Unknown architecture $HOST_ARCH, trying generic package"
+            ARCH=""
+            ;;
+    esac
+
+    # Detect package manager
+    PACKAGE_MGR=""
+    PACKAGE_EXT=""
+    
+    if nsenter --target 1 --mount --uts --ipc --net --pid which dpkg >/dev/null 2>&1; then
+        PACKAGE_MGR="dpkg"
+        PACKAGE_EXT="deb"
+        echo "Detected: Debian/Ubuntu system"
+    elif nsenter --target 1 --mount --uts --ipc --net --pid which rpm >/dev/null 2>&1; then
+        PACKAGE_MGR="rpm"
+        PACKAGE_EXT="rpm"
+        echo "Detected: RHEL/CentOS/Fedora system"
+    else
+        echo "ERROR: No supported package manager found"
+        exit 1
+    fi
+
+    # Find appropriate package
+    PACKAGE_PATH=""
+    
+    # Try architecture-specific first
+    if [[ -n "$ARCH" ]]; then
+        ARCH_PACKAGE="/opt/qualys/qualys-cloud-agent-${ARCH}.${PACKAGE_EXT}"
+        if [[ -f "$ARCH_PACKAGE" ]]; then
+            PACKAGE_PATH="$ARCH_PACKAGE"
+            echo "Selected: Architecture-specific package (${ARCH})"
+        fi
+    fi
+    
+    # Fall back to generic
+    if [[ -z "$PACKAGE_PATH" ]]; then
+        GENERIC_PACKAGE="/opt/qualys/qualys-cloud-agent.${PACKAGE_EXT}"
+        if [[ -f "$GENERIC_PACKAGE" ]]; then
+            PACKAGE_PATH="$GENERIC_PACKAGE"
+            echo "Selected: Generic package"
+        fi
+    fi
+
+    if [[ -z "$PACKAGE_PATH" ]] || [[ ! -f "$PACKAGE_PATH" ]]; then
+        echo "ERROR: No suitable package found"
+        echo "Available packages:"
+        ls -la /opt/qualys/
+        exit 1
+    fi
+
+    PACKAGE_NAME=$(basename "$PACKAGE_PATH")
+    echo "Installing: $PACKAGE_NAME"
+
+    # Copy package to host /tmp
+    cp "$PACKAGE_PATH" "${HOST_TMP}/${PACKAGE_NAME}"
+
+    # Install package
+    echo "Installing Qualys Cloud Agent"
+    if [[ "$PACKAGE_MGR" == "dpkg" ]]; then
+        nsenter --target 1 --mount --uts --ipc --net --pid \
+            bash -c "dpkg -i /tmp/${PACKAGE_NAME} || apt-get install -f -y"
+    else
+        nsenter --target 1 --mount --uts --ipc --net --pid \
+            bash -c "rpm -ivh /tmp/${PACKAGE_NAME}"
+    fi
+
+    # Create configuration with credentials from environment (Secrets)
+    echo "Configuring Qualys Cloud Agent"
+    
+    cat > /tmp/qualys-cloud-agent.conf << EOF
+    [Configuration]
+    LogLevel=$LOG_LEVEL
+
+    [Startup]
+    SuppressPopup=1
+    RunAs=0
+    ActivationId=$ACTIVATION_ID
+    CustomerId=$CUSTOMER_ID
+    ServerUri=$SERVER_URI
+    UserGroup=root
+    EOF
+
+    # Deploy configuration
+    cp /tmp/qualys-cloud-agent.conf "${HOST_TMP}/qualys-cloud-agent.conf"
+    nsenter --target 1 --mount --uts --ipc --net --pid \
+        bash -c "mkdir -p /etc/qualys/cloud-agent && \
+                 mv /tmp/qualys-cloud-agent.conf /etc/qualys/cloud-agent/ && \
+                 chown -R root:root /etc/qualys && \
+                 chmod 644 /etc/qualys/cloud-agent/qualys-cloud-agent.conf"
+
+    # Clear sensitive data from temp
+    rm -f /tmp/qualys-cloud-agent.conf
+
+    # Start service
+    echo "Starting Qualys Cloud Agent service"
+    nsenter --target 1 --mount --uts --ipc --net --pid \
+        systemctl enable qualys-cloud-agent
+    
+    nsenter --target 1 --mount --uts --ipc --net --pid \
+        systemctl start qualys-cloud-agent
+
+    # Cleanup
+    rm -f "${HOST_TMP}/${PACKAGE_NAME}"
+
+    # Verify
+    sleep 10
+    if nsenter --target 1 --mount --uts --ipc --net --pid \
+         systemctl is-active qualys-cloud-agent >/dev/null; then
+        echo "Qualys Cloud Agent is running"
+    else
+        echo "Agent may still be starting"
+    fi
+
+    # Monitor loop
+    echo "Entering monitoring mode"
+    while true; do
+        if ! nsenter --target 1 --mount --uts --ipc --net --pid \
+             systemctl is-active qualys-cloud-agent >/dev/null 2>&1; then
+            echo "[$(date)] Agent stopped, attempting restart"
+            nsenter --target 1 --mount --uts --ipc --net --pid \
+                systemctl restart qualys-cloud-agent || true
+        fi
+        sleep 300
+    done

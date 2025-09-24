@@ -2,7 +2,7 @@
 
 ## Complete Helm Chart Deployment (No Scripts Required)
 
-This guide shows how to deploy Qualys Cloud Agent using pure Helm commands. Everything is handled through `helm install` with parameters.
+This guide shows how to deploy Qualys Cloud Agent using Helm commands. Everything is handled through `helm install` with parameters.
 
 ## Directory Structure
 
